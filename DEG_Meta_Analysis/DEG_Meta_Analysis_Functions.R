@@ -23,13 +23,10 @@ Common_Set_Genes <- function(vec_of_studies){
 #included in the meta-analysis in the format that metaQC requieres in order to perform the quality control.
 
 Prepare_Meta_QC <- function(vec_of_studies,pos_study_name = 4){
-	print("JOJOJJ")
 	list_out <- list()
 	intersected <- Common_Set_Genes(vec_of_studies)
 	names_ds <- c()
 	for(i in 1:length(vec_of_studies)){
-		print(i)
-		print(vec_of_studies[i])
 		names_ds <- c(names_ds,strsplit(vec_of_studies[i],"\\/")[[1]][pos_study_name])
 		print(vec_of_studies[i])
 		temp <- get(load(file=vec_of_studies[i]))

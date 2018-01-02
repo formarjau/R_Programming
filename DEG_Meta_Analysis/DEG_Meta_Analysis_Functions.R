@@ -40,9 +40,9 @@ Prepare_Meta_QC <- function(vec_of_studies,pos_study_name = 4){
 	return(list_out)
 }
 
-#Plotting Choi differential expression meta-analysis results. It could stop working in further versions of the package.
+#Plotting MetaQC meta-analysis quality control results. It could stop working in further versions of the package.
 
-Plot <- function(., .scale.coord.var=4, isCAQC=FALSE,xl = 8, yl = 8 ) {
+Plot_MetaQC <- function(., .scale.coord.var=4, isCAQC=FALSE,xl = 8, yl = 8 ) {
   if(is.null(.$.Scores))
     .$RunQC()
   .dat <- apply(.$.Scores, 2, function(s) {

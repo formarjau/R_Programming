@@ -97,3 +97,35 @@ Plot_MetaQC <- function(., .scale.coord.var=4, isCAQC=FALSE,xl = 8, yl = 8 ) {
   points(x=.coord[,1],y=.coord[,2],pch=1,col="black",cex=2.5,lwd=2)
   text(x=.coord[,1],y=.coord[,2],cex=1) 
 }
+
+########################################
+###FUNCTIONS TO PERFORM META-ANALYSIS###
+########################################
+
+#Function created to eliminate redundant samples in a set of studies in order to perform meta-analysis.
+
+
+get_unique_form_ordered <- function(list_Metas,list_Esets,list_Col_IDs){
+  cumulative_ID <- c()
+  for(i in 2:length(list_meta)){
+    print(i)
+    if(i == 2){
+    bool <- !(list_Col_IDs[[i]] %in% list_Col_IDs[[i-1]])
+    print(bool)
+    print(dim(list_Metas[[i]][[1]]))
+    list_Metas[[i]][[1]] <- list_Metas[[i]][[1]][,bool]
+    list_Metas[[i]][[2]] <- list_Metas[[i]][[2]][bool]
+    list_Esets[[i]] <- list_Esets[[i]][,bool]
+    cumulative_ID <- unique(c(list_Col_IDs[[i]],list_Col_IDs[[i-1]]))
+    }else{
+      bool <- !(list_Col_IDs[[i]] %in% cumulative_ID)
+      print(bool)
+      list_Metas[[i]][[1]] <- list_Metas[[i]][[1]][,bool]
+      list_Metas[[i]][[2]] <- list_Metas[[i]][[2]][bool]
+      list_Esets[[i]] <- list_Esets[[i]][,bool]
+      cumulative_ID <- unique(c(cumulative_ID,list_Col_IDs[[i]]))
+    }
+  }
+  list_out <- list(list_Metas,list_Esets)
+  return(list_out)
+}

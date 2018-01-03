@@ -29,3 +29,4 @@ compare_GSEA_Enrichment <- function(folder_A,folder_B,threshold){
 	out_list <- list(data_All,data_All_filt)
 	return(out_list)
 }
+

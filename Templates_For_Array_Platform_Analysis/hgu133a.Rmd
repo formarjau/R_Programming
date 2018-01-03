@@ -1,0 +1,328 @@
+Removing previous variables and collecting garbage
+
+```{r}
+rm(list=ls())
+gc()
+```
+
+Setting options
+
+```{r}
+options(stringsAsFactors = F)
+```
+
+SouRcing function containging files.
+
+```{r}
+source("./R_prog/Basic_Functions.R")
+source("./Working_With_Arrays.R")
+source("./R_prog/Working_With_GEO.R")
+```
+
+Loading necessary libraries.
+
+```{r}
+library("Hmisc")
+library("GEOquery")
+library("limma")
+library("lumi")
+library("MDMR")
+library("xtable")
+library("cluster")
+library("affy")
+library("hgu133plus2.db")
+```
+
+Creating directory structure.
+
+```{r}
+Create_Structure("F:/Alzheimer/","GSEXXXX")
+```
+
+Setting working directory.
+
+```{r}
+setwd("F:/Alzheimer/GSEXXXX/")
+```
+
+Getting phenoData from soft file.
+
+```{r}
+#Getting pData from soft.
+
+GSEXXXX <- getGEO(filename="./Data/GSEXXXX_family.soft")
+platforms <- unlist(lapply(GPLList(GSEXXXX),function(x) Meta(x)$geo_accession)) 
+pData_GSEXXXX <- get_pData_table(GSEXXXX,platforms[[1]]) #Select the right array platform
+rownames(pData_GSEXXXX) <- pData_GSEXXXX$geo_accession
+View(pData_GSEXXXX)
+```
+
+Recoding phenoData. Example.
+
+```{r}
+pCh_Brain_Region <- pData_GSEXXXX$pCh_brain_region
+
+pCh_Status <- pData_GSEXXXX$title
+pCh_Status[grepl("Disease",pCh_Status)] <- "T"
+pCh_Status[grepl("Control",pCh_Status)] <- "NT"
+
+pCh_Individual <- pData_GSEXXXX$title
+
+pCh_Study <- pData_GSEXXXX$series_id
+
+pCh_BRAAK <- pData_GSEXXXX$pCh_braak_stage
+pCh_BRAAK[is.na(pCh_BRAAK)] <- "UNDET" #Setting NA as UNDET string
+
+pCh_AGE <- pData_GSEXXXX$pCh_age_.yrs.
+
+#pCh_MMSE <- pData_GSEXXXX$pCh_mmse
+
+pCh_GENDER <- pData_GSEXXXX$pCh_gender
+pCh_GENDER[grepl("fem",pCh_GENDER)] <- "F"
+pCh_GENDER[grepl("mal",pCh_GENDER)] <- "M"
+
+pCh_APOE_GENO <- pData_GSEXXXX$pCh_apoe_genotype
+pCh_APOE_GENO[is.na(pCh_APOE_GENO)] <- "UNDET"
+```
+
+Creating a dataframe with the selected columns.
+
+```{r}
+pData_GSEXXXX_temp <- data.frame(pCh_Brain_Region,pCh_Status,pCh_BRAAK,pCh_Individual,pCh_Study,pCh_AGE,pCh_GENDER,pCh_APOE_GENO) #Creating a data.frame with the recoded phenotypic data.
+rownames(pData_GSEXXXX_temp) <- rownames(pData_GSEXXXX)
+pData_GSEXXXX_ft <-pCh_to_Num_and_Fac(pData_GSEXXXX_temp)
+pData_GSEXXXX_ft
+
+#Check that the conversion has worked properly.
+
+lapply(pData_GSEXXXX_ft,class)
+```
+
+Adding the column that will be used as the group label in the meta-analysis.
+
+```{r}
+pMet_Status <- pData_GSEXXXX_ft$pCh_Status
+pMet_Status[pMet_Status == "NT"] <- 0
+pMet_Status[pMet_Status == "T"] <- 1
+pData_GSEXXXX_ft$pMet_Status <- pMet_Status
+```
+
+Loading the expression data.
+
+```{r}
+files <- dir("./Data",full.names = TRUE)
+files <- files[grepl(".CEL",files)]
+files <- files[gsub("\\..*","",gsub(".*/Data/","",files)) %in% rownames(pData_GSEXXXX_ft)] #Selecting only the files that match a GSM from the phenoData table.
+eData_GSEXXXX <- ReadAffy(filenames=files) #Loading data.
+```
+
+Reorder pData given the order of the columns of the eData.
+
+```{r}
+cols_eDat <- colnames(eData_GSEXXXX)
+cols_eDat
+cols_eDat <- gsub(".CEL.*","",cols_eDat)
+pData_GSEXXXX_ft <- pData_GSEXXXX_ft[cols_eDat,]
+pData_GSEXXXX_ft
+```
+
+Saving the raw data.
+
+```{r}
+GSEXXXX_List_Raw <- list(eData_GSEXXXX,pData_GSEXXXX_ft)
+save(file = "./Data/GSEXXXX_List_Raw.Rda",GSEXXXX_List_Raw)
+#GSEXXXX_List_Raw <- get(load(file = "./Data/GSEXXXX_List_Raw.Rda"))
+#eData_GSEXXXX <- GSEXXXX_List_Raw[[1]]
+#pData_GSEXXXX_ft <- GSEXXXX_List_Raw[[2]]
+```
+
+Summarize data without background correction or interarray normalization in order to create quality control plots (Density, PCA, clustering...).
+
+```{r}
+GSEXXXX_Eset_Raw <- affy::rma(eData_GSEXXXX,background = FALSE,normalize = FALSE)
+colnames(GSEXXXX_Eset_Raw) <- gsub("_.*","",gsub(".CEL.*","",colnames(eData_GSEXXXX)))
+pData(GSEXXXX_Eset_Raw) <- pData_GSEXXXX_ft[colnames(GSEXXXX_Eset_Raw),]
+```
+
+Generating quality control plots.
+
+```{r}
+pdf(file = "./Results/density_Pre_Norm.pdf")
+lumi::density(GSEXXXX_Eset_Raw,legend = FALSE)
+dev.off()
+pdf(file = "./Results/box_Pre_Norm.pdf")
+lumi::boxplot(GSEXXXX_Eset_Raw)
+dev.off()
+#pca_out <- prcomp(t(exprs(GSEXXXX_Eset_Raw)),center = TRUE)
+group <- pData(GSEXXXX_Eset_Raw)$pNm_Status
+pdf(file = "./Results/PCA_Pre_Norm_Status.pdf")
+plotPCA(GSEXXXX_Eset_Raw,groups = group,legend = FALSE)
+dev.off()
+IAC=cor(exprs(GSEXXXX_Eset_Raw),use="p")
+pdf(file = "./Results/IAC_Hist_Pre_Norm.pdf")
+hist(IAC,sub=paste("Mean=",format(mean(IAC[upper.tri(IAC)]),digits=3)),breaks=100)
+dev.off()
+cluster1=hclust(as.dist(1-IAC),method="average")
+pdf(file = "./Results/IAC_Clust_Pre_Norm.pdf")
+plot(cluster1,cex=0.7,labels=dimnames(GSEXXXX_Eset_Raw)[[2]])
+dev.off()
+meanIAC=apply(IAC,2,mean)
+sdCorr=sd(meanIAC)
+numbersd=(meanIAC-mean(meanIAC))/sdCorr
+pdf(file = "./Results/IAC_Dev_From_Mean_IAC_Pre_Norm.pdf")
+plot(numbersd)
+abline(h=-2)
+dev.off()
+```
+
+If mean IAC is lower than 0.9 we remove the less correlated samples iteratively since we reach the 0.9. If there are known important groups we appy this inside goups and not to the overall meanIAC.
+If Mean IAC is already higher than 0.9 we don't eliminate samples.
+
+```{r}
+#eData_GSEXXXX <- SR_IAC_Affy_Batches(eData_GSEXXXX,batches = paste(pData_GSEXXXX_ft$pCh_Brain_Region,pData_GSEXXXX_ft$pCh_Status,sep=""))
+#cols_eDat <- colnames(eData_GSEXXXX)
+#cols_eDat <- gsub(".CEL.*","",cols_eDat)
+#pData_GSEXXXX_ft <- pData_GSEXXXX_ft[cols_eDat,]
+#head(pData_GSEXXXX_ft)
+#table(pData_GSEXXXX_ft$pMet_Status)
+#dim(eData_GSEXXXX)
+#dim(pData_GSEXXXX_ft)
+```
+
+Processing data. Bakcground correction, quantile normalization and log2 transformation.
+
+```{r}
+GSEXXXX_Eset_Proc <- affy::rma(eData_GSEXXXX,normalize = TRUE)
+dim(GSEXXXX_Eset_Proc)
+colnames(GSEXXXX_Eset_Proc)
+colnames(GSEXXXX_Eset_Proc) <- gsub("_.*","",gsub(".CEL.*","",colnames(GSEXXXX_Eset_Proc)))
+colnames(GSEXXXX_Eset_Proc)
+```
+
+Adding the phenoData to the expressionset.
+
+```{r}
+pData(GSEXXXX_Eset_Proc) <- pData_GSEXXXX_ft[colnames(GSEXXXX_Eset_Proc),]
+pData(GSEXXXX_Eset_Proc)
+```
+
+Generating new quality control plots after normalization.
+
+```{r}
+pdf(file = "./Results/density_Post_Norm.pdf")
+lumi::density(GSEXXXX_Eset_Proc,legend = FALSE,logMode=TRUE)
+dev.off()
+pdf(file = "./Results/box_Post_Norm.pdf")
+lumi::boxplot(GSEXXXX_Eset_Proc)
+dev.off()
+group <- pData(GSEXXXX_Eset_Raw)$pNm_Status
+pdf(file = "./Results/PCA_Post_Norm_Status.pdf")
+plotPCA(GSEXXXX_Eset_Proc,groups = group,legend = FALSE)
+dev.off()
+IAC=cor(exprs(GSEXXXX_Eset_Proc),use="p")
+pdf(file = "./Results/IAC_Hist_Post_Norm.pdf")
+hist(IAC,sub=paste("Mean=",format(mean(IAC[upper.tri(IAC)]),digits=3)),breaks=100)
+dev.off()
+cluster1=hclust(as.dist(1-IAC),method="average")
+pdf(file = "./Results/IAC_Clust_Post_Norm.pdf")
+plot(cluster1,cex=0.7,labels=dimnames(GSEXXXX_Eset_Proc)[[2]])
+dev.off()
+meanIAC=apply(IAC,2,mean)
+sdCorr=sd(meanIAC)
+numbersd=(meanIAC-mean(meanIAC))/sdCorr
+pdf(file = "./Results/IAC_Dev_From_Mean_IAC_Post_Norm.pdf")
+plot(numbersd)
+abline(h=-2)
+dev.off()
+```
+
+Saving normlaized data.
+
+```{r}
+save(file = "./Data/GSEXXXX_Eset_Proc.Rda",GSEXXXX_Eset_Proc)
+GSEXXXX_Eset_Proc <- get(load(file = "./Data/GSEXXXX_Eset_Proc.Rda"))
+```
+
+If known, removing bathc effects using the combat function from the sva package. 
+
+```{r}
+#Removing batch effects.
+
+#library(sva)
+#batch = pData(GSEXXXX_Eset_Proc)$pCh_Batch
+#batch
+#modcombat = model.matrix(~1, data=pData(GSEXXXX_Eset_Proc))
+#combat_edata = ComBat(dat=exprs(GSEXXXX_Eset_Proc), batch=batch, mod=modcombat, par.prior=TRUE, #prior.plots=FALSE)
+#exprs(GSEXXXX_Eset_Proc) <- combat_edata
+```
+
+If there are replicated samples we average them samples.
+
+```{r}
+#GSEXXXX_Eset_Proc
+#head(pData(GSEXXXX_Eset_Proc))
+#average <- paste(pData(GSEXXXX_Eset_Proc)$pCh_Individual,pData(GSEXXXX_Eset_Proc)$pCh_Status,sep="")
+#GSEXXXX_Eset_Proc_AV <- Combine_Replicates(GSEXXXX_Eset_Proc,average)
+#GSEXXXX_Eset_Proc_AV <- recode_pData_After_Merging(GSEXXXX_Eset_Proc_AV)
+```
+
+We prepare data for meta-analysis. We transform probeset IDs into entrez gene IDs and collapse redundant probesets targeting the same entrezID using the collapse rows function from WGCNA package. 
+
+```{r}
+
+#All
+library("hgu133a.db")
+x <- hgu133a2ENTREZID
+
+GSEXXXX_coll_MaxMean <- collapse_rows(x,GSEXXXX_Eset_Proc,Method = "MaxMean")
+GSEXXXX_coll_Average <- collapse_rows(x,GSEXXXX_Eset_Proc,Method = "Average")
+GSEXXXX_coll_MaxRowVar <- collapse_rows(x,GSEXXXX_Eset_Proc,"maxRowVariance")
+
+factor <- pData(GSEXXXX_Eset_Proc)$pMet_Status
+
+GSEXXXX_All_MM <- list(GSEXXXX_coll_MaxMean,factor)
+GSEXXXX_All_AV <- list(GSEXXXX_coll_Average,factor)
+GSEXXXX_All_MRV <- list(GSEXXXX_coll_MaxRowVar,factor)
+
+save(file="./Data/GSEXXXX_All_MM.Rda",GSEXXXX_All_MM)
+save(file="./Data/GSEXXXX_All_AV.Rda",GSEXXXX_All_AV)
+save(file="./Data/GSEXXXX_All_MRV.Rda",GSEXXXX_All_MRV)
+```
+
+Simple differential expression analysis from limma.
+
+```{r}
+library(limma)
+fit <- lmFit(GSEXXXX_coll_MaxRowVar, design=model.matrix(~ factor))
+fit <- eBayes(fit)
+tt <- topTable(fit, coef=2,number = 20)
+tt
+heatmap_genes <- rownames(tt)
+```
+
+Plotting a heatmap using complex heatmap.
+
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite("ComplexHeatmap")
+library("ComplexHeatmap")
+```
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+set.seed(123)
+```
+
+```{r}
+GSEXXXX_coll_MaxRowVar[heatmap_genes,]
+plot_heat_data <- GSEXXXX_coll_MaxRowVar[heatmap_genes,]
+#plot_heat_data <- scale(plot_heat_data) # scale and center columns
+plot_heat_data <- t(scale(t(plot_heat_data))) # scale and center rows
+#Create heatmap with annotations using the top 20 differentially expressed genes.
+View(pData(GSEXXXX_Eset_Proc))
+df_labs <- data.frame(factor,pData(GSEXXXX_Eset_Proc)$pCh_Status)
+colnames(df_labs) <- c("factor","description")
+ha = HeatmapAnnotation(df = df_labs, col = list(factor = c("1" =  "red", "0" = "blue"),description = c("SEV" = "red","INC" = "blue","MOD" = "green","CONT" = "yellow")))
+Heatmap(plot_heat_data,col = colorRamp2(c(min(plot_heat_data), max(plot_heat_data)), c("green","red")),top_annotation=ha)
+```

@@ -43,6 +43,18 @@ contruct_net_given_folder <- function(vec_dirs,vec_names,reference,threshold){
 	return(merged)
 }
 
-count_number_cancers_same_different <- function(results_df){
-	
+Drug_Level_Comparisons <- function(list_of_dirs,reference,threshold,out_file,names){
+	temp_ref <- get(load(file = list_of_dirs[reference]))
+	print(length(list_of_dirs)/2 + 1)
+	pdf(file=out_file,heigh = 30)
+	par(mfrow=c(length(list_of_dirs)/2 + 1,2))
+	for(i in 1:length(list_of_dirs)){
+		if(i != reference){
+			temp_1 <- get(load(file = list_of_dirs[i]))
+			temp_r1 <- cbind(temp_ref$original_distancies,temp_1$original_distancies,temp_ref$fdr,temp_1$fdr)
+			temp_r1 <- temp_r1[(temp_r1[,3] < threshold) & (temp_r1[,4] < threshold),]
+			plot(temp_r1[,1],temp_r1[,2],main = paste(names[reference],"Vs",names[i]),xlab = names[reference], ylab = names[i])
+		}	
+	}
+	dev.off()	
 }

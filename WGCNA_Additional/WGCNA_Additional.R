@@ -124,3 +124,29 @@ enrich_with_fgsea <- function(corr_list,pathway){
   fgseaRes <- fgsea(pathways = paths, stats = corr_list,minSize=15,maxSize=10000,nperm=10000)
   return(fgseaRes)
   }
+
+############################################
+####CREATING GENE-WISE ANNOTATION TABLES####
+############################################
+
+construct_my_gene_table <- function(my_gene_res,go_type = 5){
+  ids <- c()
+  terms <- c()
+  for(i in 1:length(my_gene_res[[go_type]])){
+    ids <- c(ids,my_gene_res[[go_type]][[i]]$id)
+    terms <- c(terms,my_gene_res[[go_type]][[i]]$term)
+  }
+  terms <- unique(terms)
+  mat <- matrix(0,nrow  = length(unique(my_gene_res[[1]])),ncol = length(terms))
+  df <- data.frame(mat)
+  rownames(df) <-  unique(my_gene_res[[1]])
+  colnames(df) <- terms
+  for(i in 1:length(my_gene_res[[go_type]])){
+    temp_row <- my_gene_res[[1]][[i]]
+    print(temp_row)
+    temp_col <- unique(my_gene_res[[go_type]][[i]]$term)
+    print(temp_col)
+    df[temp_row,temp_col] <- 1
+  }
+  return(df)
+}

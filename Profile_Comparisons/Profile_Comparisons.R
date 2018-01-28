@@ -175,4 +175,4 @@ plot_results <- function(list_of_result_tables,file){
 }
 
 
-
+#Generate pathway associated heatmaps.

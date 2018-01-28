@@ -151,3 +151,52 @@ create_pallete <- function(vector_colors){
   }
   return(hex_sal)
 }
+
+
+
+#Create count table
+
+count_table <- function(df){
+	mat <- matrix(0,nrow = length(unique(df[,1])),ncol = length(unique(df[,2])),dimnames = list(unique(df[,1]),unique(df[,2])))
+	df_out <- data.frame(mat,check.names = FALSE)
+	for(i in 1:nrow(df)){
+		#print(as.character(df[i,3]))
+		if(as.character(df[i,3]) == "POS"){
+			df_out[as.character(df[i,1]),as.character(df[i,2])] <- 1
+		}else if(as.character(df[i,3]) == "NEG"){
+			df_out[as.character(df[i,1]),as.character(df[i,2])] <- -1
+		}	}
+	return(df_out)
+}
+
+#Heatmap generator
+
+Heat_Generator <- function(list_of_dirs,threshold,refference,diseases){
+	for(i in 1:length(list_of_dirs)){
+		#print(i)
+		if(i == 1){
+			pos <- read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[i],"POS"),threshold)
+			pos <- cbind(pos[,1],rep(diseases[i],length(pos[,1])),rep("POS",nrow(pos)))
+			colnames(pos) <- c("Path","Disease","Direction")
+			neg <- read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[i],"NEG"),threshold)
+			neg <- cbind(neg[,1],rep(diseases[i],length(neg[,1])),rep("NEG",nrow(neg)))
+			colnames(neg) <- c("Path","Disease","Direction") 
+			all <- rbind(pos,neg)
+		}else{
+			pos <- read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[i],"POS"),threshold)
+			pos <- cbind(pos[,1],rep(diseases[i],length(pos[,1])),rep("POS",nrow(pos)))
+			colnames(pos) <- c("Path","Disease","Direction")
+			neg <- read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[i],"NEG"),threshold)
+			neg <- read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[i],"NEG"),threshold)
+			neg <- cbind(neg[,1],rep(diseases[i],length(neg[,1])),rep("NEG",nrow(neg)))
+			temp <- rbind(pos,neg)
+			all <- rbind(all,temp)
+		}
+	}
+	paths <- c(read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[refference],"POS"),threshold)[,1],read_GSEA_results(get_GSEA_result_in_dir(list_of_dirs[refference],"NEG"),threshold)[,1])
+	print(length(paths))
+	all <- all[all[,1] %in% paths,]
+	all_counted <- count_table(all)
+	list_out <- list(all,all_counted)
+	return(list_out)
+}

@@ -150,3 +150,13 @@ construct_my_gene_table <- function(my_gene_res,go_type = 5){
   }
   return(df)
 }
+
+##########################################
+##OVERREPRESENTATION ENRICHMENT ANALYSIS##
+##########################################
+
+enrich_with_enrichr <- function(list_of_genes){
+  library("enrichR")
+  query <- enrichr(list_of_genes,databases = c("KEGG_2016","Reactome_2016",))
+  return(query)
+  }

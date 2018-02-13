@@ -68,8 +68,10 @@ plot_TOM_Clusters <- function(){
   
 }
 
+#Plot the module conservation data.
+
 plot_Module_Preservation_Statistics <- function(file,mp){
-	pdf(file)
+	pdf(file = file)
 	# Module labels and module sizes are also contained in the results
 	modColors = rownames(mp$preservation$observed[[ref]][[test]])
 	moduleSizes = mp$preservation$Z[[ref]][[test]][, 1];
@@ -84,6 +86,7 @@ plot_Module_Preservation_Statistics <- function(file,mp){
 	# Start the plot
 	sizeGrWindow(10, 5);
 	#pdf(fi="Plots/BxHLiverFemaleOnly-modulePreservation-Zsummary-medianRank.pdf", wi=10, h=5)
+	pdf(file = file, width=12, height=12)
 	par(mfrow = c(1,2))
 	par(mar = c(4.5,4.5,2.5,1))
 	for (p in 1:2)
@@ -173,6 +176,31 @@ enrich_with_fgsea <- function(corr_list,pathway){
   return(fgseaRes)
   }
 
+ perform_enrichment_in_all_modules <- function(exprs,colors,MEs,directory){
+ 	library(org.Hs.eg.db)
+	library(annotate)
+	library(ReactomePA)
+
+	geneModuleMembership = as.data.frame(cor(exprs, MEs, use = "p"));
+	modNames = substring(names(MEs), 3);
+	names(geneModuleMembership) = paste("MM", modNames, sep="");
+	gene_module_assign <- data.frame(colcrs,colnames(exprs),unlist(lookUp(colnames(exprs), 'org.Hs.eg', 'SYMBOL')),row.names = colnames(exprs));
+	colnames(gene_module_assign) <- c("Color","Entrez","Symbol");
+	list_modules <- list()
+	colors <- unique(gene_module_assign$Color)
+	for(i in 1:length(colors)){
+		genes <- gene_module_assign[gene_module_assign$Color == colors[i],]
+		paths <- enrichPathway(gene=genes$Entrez,pvalueCutoff=0.05, readable=T)
+		paths_df <- data.frame(paths) 
+		pdf(file=paste(directory,colors[i],"_dotplot_.pdf",sep=""),width = 15)
+		dotplot(x, showCategory=40)
+		dev.off()
+		pdf(file=paste(directory,colors[i],"_enrichMap_.pdf",sep=""),width = 15)
+		enrichMap(x, layout=igraph::layout.kamada.kawai, vertex.label.cex = 0.8,n = 40)
+		dev.off()
+	}
+ }
+
 ############################################
 ####CREATING GENE-WISE ANNOTATION TABLES####
 ############################################
@@ -208,3 +236,4 @@ enrich_with_enrichr <- function(list_of_genes){
   query <- enrichr(list_of_genes,databases = c("KEGG_2016","Reactome_2016",))
   return(query)
   }
+

@@ -1,0 +1,32 @@
+
+```{r}
+#pCh_Tissue <- rep("Blood",nrow(pData_GSEXXXXX))
+  
+#pCh_Blood_Fraction <- rep("Leukocytes",nrow(pData_GSEXXXXX))
+
+#pCh_Unique_Sample_ID <- pData_GSEXXXXX$title
+
+#pCh_Unique_Patient_ID <- Sp_To_UnSc(gsub("_.*","",pData_GSEXXXXX$title))
+
+#pCh_Status <- pData_GSEXXXXX$pCh_genotype
+#pCh_Status[grepl("bipolar",pCh_Status)] <- "T"
+#pCh_Status[grepl("control",pCh_Status)] <- "NT"
+
+#pCh_Study <- pData_GSEXXXXX$series_id
+
+#pCh_Disease <- rep("Bipolar_Disorder",nrow(pData_GSEXXXXX))
+
+#pCh_AGE <- pData_GSEXXXXX$pCh_age
+
+#pCh_GENDER <- pData_GSEXXXXX$pCh_gender
+#pCh_GENDER[grepl("male",pCh_GENDER)] <- "M"
+```
+
+Create the data frame containing the convariates.
+
+```{r}
+vars <- ls()[grepl("pCh_",ls())]
+vars <- vars[vars != "pCh_to_Num_and_Fac"]
+eval(parse(text = paste("pData_GSEXXXXX_temp <- data.frame(",paste(vars,collapse = ","),")",sep="")))
+```
+

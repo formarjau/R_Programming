@@ -1,3 +1,68 @@
+################################
+####FUNCTIONS TO IMPORT DATA####
+################################
+
+retrieve_expression_matrix <- function(list_dirs){
+  for(i in 1:length(list_dirs)){
+    print(i)
+    exp_file_temp <- dir(list_dirs[i],full.names = T)[grepl("All",dir(list_dirs[i],full.names = T))]
+    if(i == 1 ){
+      df_exp <- get(load(file = exp_file_temp))[[1]]
+      print(dim(df_exp))
+      intersected <- rownames(df_exp)
+    }else{
+      df_exp_temp <- get(load(file = exp_file_temp))[[1]]
+      print(dim(df_exp_temp))
+      intersected <- intersect(intersected,rownames(df_exp_temp))
+      df_exp <- cbind(df_exp[intersected,],df_exp_temp[intersected,])
+    }
+  }
+  return(df_exp)
+}
+
+#Create df_exp by scaling each gene within each dataset.
+
+retrieve_expression_matrix_scaling <- function(list_dirs){
+  for(i in 1:length(list_dirs)){
+    print(i)
+    exp_file_temp <- dir(list_dirs[i],full.names = T)[grepl("All",dir(list_dirs[i],full.names = T))]
+    if(i == 1 ){
+      df_exp <- get(load(file = exp_file_temp))[[1]]
+      print(dim(df_exp))
+      intersected <- rownames(df_exp)
+      df_exp <- t(scale(t(df_exp)))
+    }else{
+      df_exp_temp <- get(load(file = exp_file_temp))[[1]]
+      df_exp_temp <- t(scale(t(df_exp_temp)))
+      intersected <- intersect(intersected,rownames(df_exp_temp))
+      df_exp <- cbind(df_exp[intersected,],df_exp_temp[intersected,])
+    }
+  }
+  return(df_exp)
+}
+
+
+library(plyr)
+library(GEOquery)
+retrieve_pheno_matrix <- function(list_dirs){
+  for(i in 1:length(list_dirs)){
+    print(i)
+    pheno_file_temp <- dir(list_dirs[i],full.names = T)[grepl("Eset",dir(list_dirs[i],full.names = T))]
+    print(pheno_file_temp)
+    if(i == 1 ){
+      df_pheno <- pData(get(load(file = pheno_file_temp)))
+      df_pheno$pCh_Sample_Names <- rownames(df_pheno)
+    }else{
+      df_pheno_temp <- pData(get(load(file = pheno_file_temp)))
+      df_pheno_temp$pCh_Sample_Names <- rownames(df_pheno_temp)
+      df_pheno <- rbind.fill(df_pheno,df_pheno_temp)
+    }
+  }
+  rownames(df_pheno) <- df_pheno$pCh_Sample_Names
+  return(df_pheno)
+}
+
+
 ###########################
 ####PLOTTING FUNCTIONS#####
 ###########################
@@ -179,11 +244,12 @@ enrich_with_fgsea <- function(corr_list,pathway){
 
 # Perform Reactome Enrichment in all the modules create plots and save results.
 
- perform_enrichment_in_all_modules <- function(exprs,colors,MEs,directory){
+ perform_enrichment_in_all_modules <- function(exprs,colors,MEs,directory,n_dotplot = 20,n_enrichMap = 20){
  	library(org.Hs.eg.db)
 	library(annotate)
 	library(ReactomePA)
 	geneModuleMembership = as.data.frame(cor(exprs, MEs, use = "p"));
+	#print(head(geneModuleMembership))
 	modNames = substring(names(MEs), 3);
 	names(geneModuleMembership) = paste("MM", modNames, sep="");
 	gene_module_assign <- data.frame(colors,colnames(exprs),unlist(lookUp(colnames(exprs), 'org.Hs.eg', 'SYMBOL')),row.names = colnames(exprs));
@@ -193,19 +259,23 @@ enrich_with_fgsea <- function(corr_list,pathway){
 	for(i in 1:length(colors)){
 		genes <- gene_module_assign[gene_module_assign$Color == colors[i],]
 		paths <- enrichPathway(gene=genes$Entrez,pvalueCutoff=0.05, readable=T)
-		paths_df <- data.frame(paths) 
 		try({
+		paths_df <- as.data.frame(paths)
+		if(nrow(paths_df) > 0){
+		write.table(file = paste(directory,colors[i],"Enrichment.csv",sep=""),paths_df,quote = FALSE,sep="\t")
 		pdf(file=paste(directory,colors[i],"_dotplot.pdf",sep=""),width = 15,height = 15)
-		print(dotplot(paths,showCategory=20))
+		print(dotplot(paths,showCategory=n_dotplot))
 		dev.off()
 		pdf(file=paste(directory,colors[i],"_enrichMap.pdf",sep=""),width = 15,height = 15)
-		enrichMap(paths, layout=igraph::layout.kamada.kawai, vertex.label.cex = 0.8,n = 40)
+		enrichMap(paths, layout=igraph::layout.kamada.kawai, vertex.label.cex = 0.8,n = n_enrichMap)
 		list_temp <- list(genes,paths,paths_df)
-		dev.off()})
+		dev.off()
 		print(colors[i])
 		list_modules[[colors[i]]] <- list_temp
+			}
+		})
 	}
-	return(list_modules)
+return(list_modules)
  }
 
 ############################################
@@ -249,21 +319,29 @@ enrich_with_enrichr <- function(list_of_genes){
 #PERFORMING GSEA FUNCTIONS####
 ##############################
 
+#Transform pheno to numeric
+
+transform_Pheno <- function(pheno){
+	for(i in 1:ncol(pheno)){
+		pheno[,i] <- as.numeric(pheno[,i])
+	}
+}
+
 #Step one analysis
 
 perform_Step_One <- function(exprs,directory,tagg,threshold_fit = 0.85,minModuleSize = 30){
 	print("Selecting Power...")
 	powers = c(c(1:20), seq(from = 12, to=20, by=2))
 	sft = pickSoftThreshold(exprs, powerVector = powers, verbose = 5)
-	save(file=paste(directory,tagg,"_soft_thresh.Rda"),sft)
+	save(file=paste(directory,tagg,"_soft_thresh.Rda",sep=""),sft)
 	softPower <- sft$fitIndices[sft$fitIndices$SFT.R.sq > threshold_fit,][1,1]
 	print(softPower)
 	print("Computing adjacency matrix...")
 	adjacency = adjacency(exprs, power = softPower);
-	save(file=paste(directory,tagg,"_adjacency_Healthy.Rda"),adjacency)
+	save(file=paste(directory,tagg,"_adjacency_Healthy.Rda",sep=""),adjacency)
 	print("Computing TOM...")
 	TOM = TOMsimilarity(adjacency);
-	save(file=paste(directory,tagg,"_TOM_Healthy.Rda"),TOM)
+	save(file=paste(directory,tagg,"_TOM_Healthy.Rda",sep=""),TOM)
 	dissTOM = 1-TOM
 	geneTree = hclust(as.dist(dissTOM), method = "average");
 	minModuleSize = minModuleSize;
@@ -272,7 +350,7 @@ perform_Step_One <- function(exprs,directory,tagg,threshold_fit = 0.85,minModule
 	number_of_modules <- length(table(dynamicColors))
 	number_of_genes_in_modules <- table(dynamicColors)
 
-	pdf(file = paste(directory,tagg,"_geneTree_Mod_Cols.pdf"))
+	pdf(file = paste(directory,tagg,"_geneTree_Mod_Cols.pdf",sep=""))
 	plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut",dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05, main = "Gene dendrogram and module colors")
 	dev.off()
 	print("Computing Module eigengenes...")
@@ -280,33 +358,35 @@ perform_Step_One <- function(exprs,directory,tagg,threshold_fit = 0.85,minModule
 	MEs = MEList$eigengenes
 	MEDiss = 1-cor(MEs);
 	METree = hclust(as.dist(MEDiss), method = "average");
-	pdf(file = paste(directory,tagg,"_METree.pdf"))
+	pdf(file = paste(directory,tagg,"_METree.pdf",sep=""))
 	plot(METree, main = "Clustering of module eigengenes",xlab = "", sub = "")
 	MEDissThres = 0.25
 	abline(h=MEDissThres, col = "red")
 	dev.off()
-	save(exprs,softPower,adjacency,TOM,dissTOM,geneTree,minModuleSize,dynamicColors,number_of_modules,number_of_genes_in_modules,MEList,MEs,MEDiss,METree,file= paste(directory,tagg,"Step_1_Data.Rdata",sep=""))
+	save(exprs,softPower,adjacency,TOM,dissTOM,geneTree,minModuleSize,dynamicColors,number_of_modules,number_of_genes_in_modules,MEList,MEs,MEDiss,METree,file= paste(directory,tagg,"_Step_1_Data.Rdata",sep=""))
 }
 
 #Step two ananlysis
 
-perform_Step_Two <- function(exprs,dynamicColors,tagg,MEDissThres = 0.25,directory){
+perform_Step_Two <- function(exprs,dynamicColors,geneTree,tagg,MEDissThres = 0.25,directory){
 	print("Merging close modules...")
 	merge = mergeCloseModules(exprs, dynamicColors, cutHeight = MEDissThres, verbose = 3)
-	pdf(file=paste(directory,tagg,"Module_Gene_Content.pdf"))
+	pdf(file=paste(directory,tagg,"_Module_Gene_Content.pdf",sep=""))
 	barplot(table(merge$colors),col = names(table(merge$colors)),cex.names = .7,las = 2)
 	dev.off()
 	mergedColors = merge$colors;
 	mergedMEs = merge$newMEs;
-	pdf(file =paste(directory,tagg,"_Tree_Merged_Colors.pdf"))
+	pdf(file =paste(directory,tagg,"_Tree_Merged_Colors.pdf",sep=""))
 	plotDendroAndColors(geneTree, cbind(dynamicColors, mergedColors),c("Dynamic Tree Cut", "Merged dynamic"),dendroLabels = FALSE, hang = 0.03,addGuide = TRUE, guideHang = 0.05)
 	dev.off()
 	moduleColors = mergedColors
 	colorOrder = c("grey", standardColors(50));
 	moduleLabels = match(moduleColors, colorOrder)-1;
 	MEs = mergedMEs;
-	save(merge,mergedColors,mergedMEs,moduleColors,colorOrder,moduleLabels,MEs,file=paste(directory,tagg,"Step_2_Data.Rdata",sep="\t"))
+	save(merge,mergedColors,mergedMEs,moduleColors,colorOrder,moduleLabels,MEs,file=paste(directory,tagg,"_Step_2_Data.Rdata",sep=""))
 }
+
+#Step three analysis
 
 perform_Step_Three <- function(exprs,directory,tagg,dat_traits,moduleColors){
 	nGenes = ncol(exprs);
@@ -316,8 +396,8 @@ perform_Step_Three <- function(exprs,directory,tagg,dat_traits,moduleColors){
 	MEs = orderMEs(MEs0)
 	moduleTraitCor = cor(MEs, datTraits, use = "p");
 	moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples);
-	save(nGenes,nSamples,datTraits,MEs0,MEs,moduleTraitCor, moduleTraitPvalue, file = paste(directory,tagg,"Step_3_Data.Rdata"))
-	pdf(file = 	paste(directory,tagg,"Module_Trait_Associations.pdf"))
+	save(nGenes,nSamples,datTraits,MEs0,MEs,moduleTraitCor, moduleTraitPvalue, file = paste(directory,tagg,"_Step_3_Data.Rdata",sep=""))
+	pdf(file = 	paste(directory,tagg,"Module_Trait_Associations.pdf",sep=""))
 	textMatrix = paste(signif(moduleTraitCor, 2), "\n(",
 	signif(moduleTraitPvalue, 1), ")", sep = "");
 	dim(textMatrix) = dim(moduleTraitCor)
@@ -336,3 +416,170 @@ perform_Step_Three <- function(exprs,directory,tagg,dat_traits,moduleColors){
 	main = paste("Module-trait relationships"))
 	dev.off()
 	}
+
+#Step four analysis
+
+perform_Step_Four <- function(datExpr,moduleColors,tagg,directory){
+	MEs = moduleEigengenes(datExpr, moduleColors)$eigengenes
+	MEs_Ord = orderMEs(MEs)
+	library(corrplot)
+	cor_to_plot <- cor(MEs_Ord)
+	colnames(cor_to_plot) <- gsub("ME","",colnames(cor_to_plot))
+	rownames(cor_to_plot) <- gsub("ME","",rownames(cor_to_plot))
+	pdf(file=paste(directory,tagg,"Eigengene_Correlations.pdf",sep=""))
+	corrplot(cor_to_plot, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 90,tl.cex = 0.7)
+	dev.off()
+	pdf(file=paste(directory,tagg,"Eigengene_Associations.pdf",sep=""))
+	plotEigengeneNetworks(MEs_Ord, "Eigengene adjacency heatmap", marHeatmap = c(3,4,2,2),
+	plotDendrograms = TRUE, xLabelsAngle = 90,plotHeatmaps = T)
+	save(cor_to_plot, file = paste(directory,tagg,"_Step_4_Data.Rdata",sep=""))
+	dev.off()
+}
+
+
+create_Gene_Module_Memberships <- function(exprs,moduleColors,genes,tagg,directory,dat_traits){
+	library(org.Hs.eg.db)
+	library(annotate)
+	nGenes = ncol(exprs);
+	nSamples = nrow(exprs);
+	MEs0 = moduleEigengenes(exprs, moduleColors)$eigengenes
+	colnames(MEs0)
+	#Cual es la diferencia entre ME y MEs. 
+	MEs = orderMEs(MEs0)
+	colnames(MEs)
+	modNames = substring(names(MEs), 3)
+	geneModuleMembership = as.data.frame(cor(exprs, MEs, use = "p"))
+	MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership), nSamples))
+	names(geneModuleMembership) = paste("MM", modNames, sep="");
+	names(MMPvalue) = paste("p.MM", modNames, sep="");
+	#print(head(geneModuleMembership))
+	list_of_gene_trait_significance <- list()
+	for(i in 1:ncol(dat_traits)){
+		print(table(is.na(as.numeric(dat_traits[,i]))))
+		geneTraitSignificance_temp = as.data.frame(cor(exprs, as.numeric(dat_traits[,i]), use = "p"));
+		GSPvalue_temp = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance_temp), nSamples));
+		names(geneTraitSignificance_temp) = paste("GS.", colnames(dat_traits)[i], sep="");
+		names(GSPvalue_temp) = paste("p.GS.", colnames(dat_traits)[i], sep="");
+		temp_list <- list(geneTraitSignificance_temp,GSPvalue_temp)
+		list_of_gene_trait_significance[[i]] <- temp_list
+	}
+	names(list_of_gene_trait_significance) <- colnames(dat_traits)
+	gene_module_assign <- data.frame(moduleColors,colnames(exprs),unlist(lookUp(colnames(exprs), 'org.Hs.eg', 'SYMBOL')),row.names = colnames(exprs))
+	colnames(gene_module_assign) <- c("Color","Entrez","Symbol")
+	
+	for(k in 1:length(genes)){
+	directory_temp <- paste(directory,tagg,"_",genes[k],"/",sep="")
+  if(!dir.exists(directory_temp)){
+			  dir.create(directory_temp)
+			}
+  pdf(file = paste(directory_temp,"gene_Module_Membership.pdf",sep=""))
+		barplot(as.numeric(geneModuleMembership[genes[k],]),col = gsub("MM","",names(geneModuleMembership[genes[k],])),cex.names = .7,las = 2)
+		dev.off()
+	for(i in 1:ncol(geneModuleMembership)){
+	  for(j in 1:length(list_of_gene_trait_significance)){
+	    module_temp <- colnames(geneModuleMembership)[i]
+	    trait_temp <- names(list_of_gene_trait_significance)[j]
+	    pdf(file = paste(directory_temp,colnames(geneModuleMembership)[i],"_Vs_",names(list_of_gene_trait_significance)[j],"_",genes[k],"_","gene_MM_Vs_TS.pdf",sep=""))
+	    plot(geneModuleMembership[,i],list_of_gene_trait_significance[[j]][[1]][,1],col = ifelse(rownames(geneModuleMembership) == genes[k],"red","black"),cex =  ifelse(rownames(geneModuleMembership) == genes[k],1,1),xlim = c(-1,1),ylim = c(-1,1),ylab = trait_temp,xlab = module_temp)
+	    points(geneModuleMembership[genes[k],i],list_of_gene_trait_significance[[j]][[1]][genes[k],1],col="red",cex = 3,pch = 20)
+	    text(geneModuleMembership[genes[k],i],list_of_gene_trait_significance[[j]][[1]][genes[k],1]+0.1,labels = genes[k],col="red",cex = 2)
+	    dev.off()
+	  }
+	}
+}
+save(geneModuleMembership,MMPvalue,list_of_gene_trait_significance,gene_module_assign,file = paste(directory_temp,"/",tagg,"_Single_Gene_Analysis_Data.Rdata",sep=""))
+}
+
+
+######################
+###AD HOC FUNCTIONS###
+######################
+
+curate_breast_pheno_data <- function(exprs,Pheno){
+	intersected <- intersect(colnames(exprs),rownames(Pheno))
+	exprs <- exprs[,intersected]
+	Pheno <- Pheno[intersected,]
+	selected <- c("pCh_Status","pCh_Individual","pCh_Study","pCh_Subtype_PAM50","WGCNA_Basal","WGCNA_Her2","WGCNA_LumA","WGCNA_LumB","WGCNA_Normal","WGCNA_Others","pCh_ER","pCh_PR","pCh_HER2","pCh_Grade","pCh_Age")
+	Pheno <- Pheno[,selected]
+	pCh_ER <- Pheno$pCh_ER
+	pCh_ER[grepl("\\+",pCh_ER)] <- "POS"
+	pCh_ER[grepl("\\-",pCh_ER)] <- "NEG"
+	pCh_ER[grepl("0",pCh_ER)] <- "NEG"
+	pCh_ER[grepl("1",pCh_ER)] <- "POS"
+	pCh_ER[grepl("ER_Negative",pCh_ER)] <- "NEG"
+	pCh_ER[grepl("ER_Positive",pCh_ER)] <- "POS"
+	pCh_ER[grepl("negative",pCh_ER)] <- "NEG"
+	pCh_ER[grepl("positive",pCh_ER)] <- "POS"
+	pCh_ER[grepl("pos",pCh_ER)] <- "POS"
+	pCh_ER[grepl("neg",pCh_ER)] <- "NEG"
+	pCh_ER[grepl("Positive",pCh_ER)] <- "POS"
+	pCh_ER[grepl("Negative",pCh_ER)] <- "NEG"
+	pCh_ER[grepl("3",pCh_ER)] <- NA
+	pCh_ER[grepl("4",pCh_ER)] <- NA
+	pCh_ER[grepl("5",pCh_ER)] <- NA
+	pCh_ER[grepl("6",pCh_ER)] <- NA
+	pCh_ER[grepl("7",pCh_ER)] <- NA
+	pCh_ER[grepl("8",pCh_ER)] <- NA
+	pCh_ER[grepl("N/A",pCh_ER)] <- NA
+	pCh_ER[grepl("NA",pCh_ER)] <- NA
+	pCh_ER[grepl("UNDET",pCh_ER)] <- NA
+	pCh_ER[grepl("not_analyzed",pCh_ER)] <- NA
+	Pheno$pCh_ER <- pCh_ER
+	pCh_PR <- Pheno$pCh_PR
+	pCh_PR[grepl("\\+",pCh_PR)] <- "POS"
+	pCh_PR[grepl("\\-",pCh_PR)] <- "NEG"
+	pCh_PR[grepl("0",pCh_PR)] <- "NEG"
+	pCh_PR[grepl("1",pCh_PR)] <- "POS"
+	pCh_PR[grepl("PR_Negative",pCh_PR)] <- "NEG"
+	pCh_PR[grepl("PR_Positive",pCh_PR)] <- "POS"
+	pCh_PR[grepl("negative",pCh_PR)] <- "NEG"
+	pCh_PR[grepl("positive",pCh_PR)] <- "POS"
+	pCh_PR[grepl("pos",pCh_PR)] <- "POS"
+	pCh_PR[grepl("neg",pCh_PR)] <- "NEG"
+	pCh_PR[grepl("Positive",pCh_PR)] <- "POS"
+	pCh_PR[grepl("Negative",pCh_PR)] <- "NEG"
+	pCh_PR[grepl("2",pCh_PR)] <- NA
+	pCh_PR[grepl("3",pCh_PR)] <- NA
+	pCh_PR[grepl("4",pCh_PR)] <- NA
+	pCh_PR[grepl("5",pCh_PR)] <- NA
+	pCh_PR[grepl("6",pCh_PR)] <- NA
+	pCh_PR[grepl("7",pCh_PR)] <- NA
+	pCh_PR[grepl("8",pCh_PR)] <- NA
+	pCh_PR[grepl("N/A",pCh_PR)] <- NA
+	pCh_PR[grepl("NA",pCh_PR)] <- NA
+	pCh_PR[grepl("UNDET",pCh_PR)] <- NA
+	pCh_PR[grepl("not_analyzed",pCh_PR)] <- NA
+	Pheno$pCh_PR <- pCh_PR
+	pCh_HER2 <- Pheno$pCh_HER2
+	pCh_HER2[grepl("\\+",pCh_HER2)] <- "POS"
+	pCh_HER2[grepl("\\-",pCh_HER2)] <- "NEG"
+	pCh_HER2[grepl("0",pCh_HER2)] <- "NEG"
+	pCh_HER2[grepl("1",pCh_HER2)] <- "POS"
+	pCh_HER2[grepl("HER2_Negative",pCh_HER2)] <- "NEG"
+	pCh_HER2[grepl("HER2_Positive",pCh_HER2)] <- "POS"
+	pCh_HER2[grepl("negative",pCh_HER2)] <- "NEG"
+	pCh_HER2[grepl("positive",pCh_HER2)] <- "POS"
+	pCh_HER2[grepl("pos",pCh_HER2)] <- "POS"
+	pCh_HER2[grepl("neg",pCh_HER2)] <- "NEG"
+	pCh_HER2[grepl("Positive",pCh_HER2)] <- "POS"
+	pCh_HER2[grepl("Negative",pCh_HER2)] <- "NEG"
+	pCh_HER2[grepl("2",pCh_HER2)] <- NA
+	pCh_HER2[grepl("3",pCh_HER2)] <- NA
+	pCh_HER2[grepl("4",pCh_HER2)] <- NA
+	pCh_HER2[grepl("5",pCh_HER2)] <- NA
+	pCh_HER2[grepl("6",pCh_HER2)] <- NA
+	pCh_HER2[grepl("7",pCh_HER2)] <- NA
+	pCh_HER2[grepl("8",pCh_HER2)] <- NA
+	pCh_HER2[grepl("unk",pCh_HER2)] <- NA
+	pCh_HER2[grepl("normal",pCh_HER2)] <- NA
+	pCh_HER2[grepl("N/A",pCh_HER2)] <- NA
+	pCh_HER2[grepl("NA",pCh_HER2)] <- NA
+	pCh_HER2[grepl("UNDET",pCh_HER2)] <- NA
+	pCh_HER2[grepl("not_analyzed",pCh_HER2)] <- NA
+	Pheno$pCh_HER2 <- pCh_HER2
+	WGCNA_Healthy <- ifelse(Pheno$pCh_Status == "NT",1,0)
+	Pheno$WGCNA_Healthy <- WGCNA_Healthy
+	out <- list(exprs,Pheno)
+	return(out)
+}
